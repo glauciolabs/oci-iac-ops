@@ -1,49 +1,30 @@
-# accounts/account1/variables.tf
+# accounts/variables.tf
 
 variable "compartment_ocid" {
   type        = string
-  description = "ocid compartiment"
-}
-
-variable "availability_domain" {
-  type        = string
-  description = "availability domain"
+  description = "OCI compartment OCID"
 }
 
 variable "image_ocid" {
   type        = string
-  description = "image ocid"
-  default     = "ocid1.image.oc1.sa-saopaulo-1.aaaaaaaath3bwke2i3zu3sgxrgnsboacjihmylxbuogivbgma476pzykarpa"
+  description = "Image OCID"
 }
 
 variable "ssh_key" {
   type        = string
-  description = "ssh public key"
+  description = "SSH public key"
 }
 
 variable "region" {
   type        = string
-  description = "oci region"
+  description = "OCI region"
 }
 
 variable "prefix" {
   type        = string
-  description = "name prefix"
+  description = "Resource name prefix"
 }
 
-variable "vcn_cidr" {
-  type        = string
-  description = "vcn cidr block"
-  default     = "10.10.0.0/16"
-}
-
-variable "subnet_cidr" {
-  type        = string
-  description = "subnet cidr block"
-  default     = "10.10.1.0/24"
-}
-
-# Variáveis de autenticação OCI
 variable "tenancy_ocid" {
   type        = string
   description = "OCI tenancy OCID"
@@ -56,34 +37,76 @@ variable "user_ocid" {
 
 variable "fingerprint" {
   type        = string
-  description = "OCI API key fingerprint"
+  description = "API key fingerprint"
 }
 
 variable "private_key_path" {
   type        = string
-  description = "Path to OCI API private key"
+  description = "Path to private key"
 }
 
 variable "instance_count" {
   type        = number
-  description = "number of instances to create"
+  description = "Number of instances to create"
   default     = 2
 }
 
 variable "instance_shape" {
   type        = string
-  description = "instance shape"
+  description = "Instance shape"
   default     = "VM.Standard.A1.Flex"
 }
 
 variable "instance_memory_gb" {
   type        = number
-  description = "memory in GB for each instance"
+  description = "Memory in GB for each instance"
   default     = 12
 }
 
 variable "instance_ocpus" {
   type        = number
-  description = "number of OCPUs for each instance"
+  description = "Number of OCPUs for each instance"
   default     = 2
+}
+
+variable "boot_volume_size_in_gbs" {
+  type        = number
+  description = "Boot volume size in GB; null to use image default"
+  default     = null
+}
+
+variable "ad_number" {
+  type        = number
+  description = "Availability domain number (1, 2, or 3)"
+  default     = 1
+}
+
+variable "vcn_cidr" {
+  type        = string
+  description = "VCN CIDR block"
+  default     = "10.10.0.0/16"
+}
+
+variable "subnet_cidr" {
+  type        = string
+  description = "Subnet CIDR block"
+  default     = "10.10.1.0/24"
+}
+
+variable "shared_volumes_config" {
+  description = "Configuration for the shared block volumes."
+  type = map(object({
+    display_name = string
+    size_in_gbs  = number
+  }))
+  default = {
+    "database_storage" = {
+      display_name = "database-storage"
+      size_in_gbs  = 50
+    },
+    "file_storage" = {
+      display_name = "file-storage"
+      size_in_gbs  = 56
+    }
+  }
 }

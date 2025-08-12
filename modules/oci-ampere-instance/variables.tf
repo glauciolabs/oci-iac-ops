@@ -2,55 +2,56 @@
 
 variable "compartment_id" {
   type        = string
-  description = "OCID compartment"
+  description = "Compartment OCID"
 }
 
 variable "availability_domain" {
   type        = string
-  description = "availability domain"
+  description = "Availability domain name"
 }
 
 variable "subnet_id" {
   type        = string
-  description = "subnet id"
+  description = "Subnet OCID"
 }
 
 variable "image_ocid" {
   type        = string
-  description = "image ocid"
+  description = "Image OCID"
 }
 
 variable "ssh_key" {
   type        = string
-  description = "ssh public key"
+  description = "SSH public key"
 }
 
 variable "instance_count" {
   type        = number
-  description = "number of instances to create"
-  default     = 2
+  description = "Number of instances"
 }
 
 variable "instance_shape" {
   type        = string
-  description = "instance shape"
-  default     = "VM.Standard.A1.Flex"
+  description = "Instance shape"
 }
 
 variable "instance_memory_gb" {
   type        = number
-  description = "memory in GB for each instance"
-  default     = 12
+  description = "Memory in GB for each instance"
 }
 
 variable "instance_ocpus" {
   type        = number
-  description = "number of OCPUs for each instance"
-  default     = 2
+  description = "Number of OCPUs for each instance"
+}
+
+variable "boot_volume_size_in_gbs" {
+  type        = number
+  description = "Boot volume size in GB; null for image default"
+  default     = null
 }
 
 variable "instance_prefix" {
   type        = string
-  description = "prefix for instance names"
-  default     = "instance"
+  description = "Instance name prefix"
 }
