@@ -1,4 +1,4 @@
-name: Terraform OCI Multi-Account
+name: Terraform OCI IaC Workflow
 
 on:
   workflow_dispatch:
