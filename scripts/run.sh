@@ -1,11 +1,13 @@
 #!/bin/bash
 set -e
 
+# --- SCRIPT ARGUMENTS ---
 JSON_FILE=$1
 ACCOUNT_ID=$2
 ACTION=$3
 WORK_DIR=$4
 
+# --- VALIDATION ---
 if [[ ! -f "$JSON_FILE" ]]; then
     echo "❌ File $JSON_FILE not found!"
     exit 1
@@ -14,10 +16,6 @@ fi
 echo "🚀 Executing terraform $ACTION for account $ACCOUNT_ID"
 echo "📁 Working directory: $WORK_DIR"
 
-get_value() {
-    jq -r ".\"$ACCOUNT_ID\".\"$1\"" "$JSON_FILE" 2>/dev/null || echo ""
-}
-
 cd "$WORK_DIR"
 
 if [[ ! -f "main.tf" ]]; then
@@ -25,64 +23,47 @@ if [[ ! -f "main.tf" ]]; then
     exit 1
 fi
 
-prepare_boot_volume_param() {
-    local boot_volume_size
-    boot_volume_size=$(get_value "boot_volume_size_in_gbs")
-    if [[ "$boot_volume_size" == "null" || -z "$boot_volume_size" ]]; then
-        echo ""
-    else
-        echo "-var=boot_volume_size_in_gbs=$boot_volume_size"
-    fi
-}
+# --- VARIABLE PREPARATION (THE FIX) ---
+# [CHANGED] Instead of extracting each variable one-by-one, we extract the entire
+# JSON object for the selected account. This preserves all data types (string, number, null).
+# Terraform will automatically load any file ending in .auto.tfvars.json.
+echo "📝 Generating terraform variables file..."
+jq ".[\"$ACCOUNT_ID\"]" "$JSON_FILE" > account.auto.tfvars.json
 
-PRIVATE_KEY=$(get_value "private_key")
+# [CHANGED] We still need to get the private key and some backend values separately.
+PRIVATE_KEY=$(jq -r ".[\"$ACCOUNT_ID\"].private_key" "$JSON_FILE")
 echo "$PRIVATE_KEY" > private_key.pem
 chmod 600 private_key.pem
 echo "✅ Private key created"
 
+# --- TERRAFORM INITIALIZATION ---
+# This part remains mostly the same, using jq to get individual values for the backend config.
+terraform init \
+  -backend-config="bucket=$(jq -r ".[\"$ACCOUNT_ID\"].tf_state_bucket_name" "$JSON_FILE")" \
+  -backend-config="namespace=$(jq -r ".[\"$ACCOUNT_ID\"].namespace" "$JSON_FILE")" \
+  -backend-config="region=$(jq -r ".[\"$ACCOUNT_ID\"].region" "$JSON_FILE")" \
+  -backend-config="tenancy_ocid=$(jq -r ".[\"$ACCOUNT_ID\"].tenancy_ocid" "$JSON_FILE")" \
+  -backend-config="user_ocid=$(jq -r ".[\"$ACCOUNT_ID\"].user_ocid" "$JSON_FILE")" \
+  -backend-config="fingerprint=$(jq -r ".[\"$ACCOUNT_ID\"].fingerprint" "$JSON_FILE")" \
+  -backend-config="private_key_path=$(pwd)/private_key.pem" \
+  -reconfigure
+
+# --- TERRAFORM EXECUTION ---
+echo "📋 Executing terraform $ACTION..."
+
+# [CHANGED] The large TERRAFORM_ARGS array is no longer needed.
+# The only variable we need to pass manually is the one not in the JSON: private_key_path.
+# All other variables (ad_number, region, etc.) are loaded from account.auto.tfvars.json.
 AUTO_APPROVE=""
-if [[ "$GITHUB_ACTIONS" == "true" ]]; then
+if [[ "$ACTION" == "apply" || "$ACTION" == "destroy" ]]; then
     AUTO_APPROVE="-auto-approve"
 fi
 
-TERRAFORM_ARGS=(
-    -var="region=$(get_value region)"
-    -var="compartment_ocid=$(get_value compartment_ocid)"
-    -var="ad_number=$(get_value ad_number)"
-    -var="prefix=$(get_value prefix)"
-    -var="ssh_key=$(get_value ssh_key)"
-    -var="vcn_cidr=$(get_value vcn_cidr)"
-    -var="subnet_cidr=$(get_value subnet_cidr)"
-    -var="image_ocid=$(get_value image_ocid)"
-    -var="tenancy_ocid=$(get_value tenancy_ocid)"
-    -var="user_ocid=$(get_value user_ocid)"
-    -var="fingerprint=$(get_value fingerprint)"
-    -var="private_key_path=$(pwd)/private_key.pem"
-    -var="instance_count=$(get_value instance_count)"
-    -var="instance_shape=$(get_value instance_shape)"
-    -var="instance_memory_gb=$(get_value instance_memory_gb)"
-    -var="instance_ocpus=$(get_value instance_ocpus)"
-    $(prepare_boot_volume_param)
-)
-
-terraform init \
-  -backend-config="bucket=$(get_value tf_state_bucket_name)" \
-  -backend-config="namespace=$(get_value namespace)" \
-  -backend-config="key=terraform.tfstate" \
-  -backend-config="region=$(get_value region)" \
-  -backend-config="tenancy_ocid=$(get_value tenancy_ocid)" \
-  -backend-config="user_ocid=$(get_value user_ocid)" \
-  -backend-config="fingerprint=$(get_value fingerprint)" \
-  -backend-config="private_key_path=$(pwd)/private_key.pem"
-
-echo "📋 Executing terraform $ACTION..."
-case $ACTION in
-  plan)
-    terraform plan "${TERRAFORM_ARGS[@]}"
-    ;;
-  apply|destroy)
-    terraform "$ACTION" $AUTO_APPROVE "${TERRAFORM_ARGS[@]}"
-    ;;
-esac
+terraform "$ACTION" $AUTO_APPROVE -var="private_key_path=$(pwd)/private_key.pem"
 
 echo "✅ Terraform $ACTION completed successfully!"
+
+# --- CLEANUP ---
+# [ADDED] It's good practice to clean up the generated tfvars file.
+echo "🧹 Cleaning up generated files..."
+rm -f account.auto.tfvars.json
