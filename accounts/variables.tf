@@ -79,6 +79,7 @@ variable "ad_number" {
   type        = number
   description = "Availability domain number (1, 2, or 3)"
   default     = 1
+  nullable    = false
 }
 
 variable "vcn_cidr" {

@@ -23,12 +23,9 @@ if [[ ! -f "main.tf" ]]; then
     exit 1
 fi
 
-# --- VARIABLE PREPARATION (THE FINAL FIX) ---
+# --- VARIABLE PREPARATION ---
 echo "📝 Isolating configuration for account $ACCOUNT_ID..."
-
-# [THE FIX] First, we robustly extract the entire JSON object for the selected account.
-# This avoids the direct indexing '.[$account_id]' which was causing the error.
-ACCOUNT_JSON=$(jq --arg account_id "$ACCOUNT_ID" 'to_entries | .[] | select(.key == $account_id) | .value' "$JSON_FILE")
+ACCOUNT_JSON=$(jq --arg account_id "$ACCOUNT_ID" '. | .[$account_id]' "$JSON_FILE")
 
 if [[ -z "$ACCOUNT_JSON" ]]; then
     echo "❌ Could not find account with ID '$ACCOUNT_ID' in $JSON_FILE"
@@ -37,30 +34,20 @@ fi
 
 echo "📝 Generating terraform variables file..."
 
-# Now, we build the variables file using the isolated ACCOUNT_JSON.
-echo "$ACCOUNT_JSON" | jq '{
-    compartment_ocid,
-    image_ocid,
-    ssh_key: .ssh_public_key,
-    region,
-    prefix,
-    tenancy_ocid,
-    user_ocid,
-    fingerprint,
-    instance_count,
-    instance_shape,
-    instance_memory_gb,
-    instance_ocpus,
-    boot_volume_size_in_gbs,
-    ad_number,
-    vcn_cidr,
-    subnet_cidr,
-    shared_volumes_config: ([(.block_volumes // [])[] | {key: .display_name | sub("-"; "_"), value: {display_name, size_in_gbs}}] | from_entries)
-}' > account.auto.tfvars.json
+# [THE FIX] This jq command modifies the account JSON in place.
+# It renames ssh_public_key, transforms block_volumes, and then removes
+# any keys that are not valid Terraform variables for this module.
+echo "$ACCOUNT_JSON" | jq '
+  # 1. Rename ssh_public_key to ssh_key
+  .ssh_key = .ssh_public_key |
+  # 2. Transform block_volumes array into the required map
+  .shared_volumes_config = ([(.block_volumes // [])[] | {key: .display_name | sub("-"; "_"), value: {display_name, size_in_gbs}}] | from_entries) |
+  # 3. Delete keys that are not Terraform input variables
+  del(.account_name, .availability_domain, .private_key, .ssh_public_key, .block_volumes, .tf_state_bucket_name, .namespace)
+' > account.auto.tfvars.json
 
 
 # --- PRIVATE KEY & BACKEND CONFIG ---
-# [THE FIX] We now use the isolated ACCOUNT_JSON variable, which is cleaner and safer.
 PRIVATE_KEY=$(echo "$ACCOUNT_JSON" | jq -r ".private_key")
 echo "$PRIVATE_KEY" > private_key.pem
 chmod 600 private_key.pem
