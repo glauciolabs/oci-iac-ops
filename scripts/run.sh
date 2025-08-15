@@ -24,13 +24,24 @@ if [[ ! -f "main.tf" ]]; then
 fi
 
 # --- VARIABLE PREPARATION (THE FINAL FIX) ---
+echo "📝 Isolating configuration for account $ACCOUNT_ID..."
+
+# [THE FIX] First, we robustly extract the entire JSON object for the selected account.
+# This avoids the direct indexing '.[$account_id]' which was causing the error.
+ACCOUNT_JSON=$(jq --arg account_id "$ACCOUNT_ID" 'to_entries | .[] | select(.key == $account_id) | .value' "$JSON_FILE")
+
+if [[ -z "$ACCOUNT_JSON" ]]; then
+    echo "❌ Could not find account with ID '$ACCOUNT_ID' in $JSON_FILE"
+    exit 1
+fi
+
 echo "📝 Generating terraform variables file..."
-jq --arg account_id "$ACCOUNT_ID" '
-.[$account_id] | {
-    # All other variables are passed directly
+
+# Now, we build the variables file using the isolated ACCOUNT_JSON.
+echo "$ACCOUNT_JSON" | jq '{
     compartment_ocid,
     image_ocid,
-    ssh_key: .ssh_public_key, # Renames key for Terraform
+    ssh_key: .ssh_public_key,
     region,
     prefix,
     tenancy_ocid,
@@ -44,26 +55,25 @@ jq --arg account_id "$ACCOUNT_ID" '
     ad_number,
     vcn_cidr,
     subnet_cidr,
-    # [THE FIX] Added `// []` to handle cases where block_volumes might be null or missing.
-    # This provides a default empty list, preventing the "Cannot iterate over null" error.
     shared_volumes_config: ([(.block_volumes // [])[] | {key: .display_name | sub("-"; "_"), value: {display_name, size_in_gbs}}] | from_entries)
-}
-' "$JSON_FILE" > account.auto.tfvars.json
+}' > account.auto.tfvars.json
 
-# Extract private key separately for backend and file creation
-PRIVATE_KEY=$(jq -r ".[$ACCOUNT_ID].private_key" "$JSON_FILE")
+
+# --- PRIVATE KEY & BACKEND CONFIG ---
+# [THE FIX] We now use the isolated ACCOUNT_JSON variable, which is cleaner and safer.
+PRIVATE_KEY=$(echo "$ACCOUNT_JSON" | jq -r ".private_key")
 echo "$PRIVATE_KEY" > private_key.pem
 chmod 600 private_key.pem
 echo "✅ Private key created"
 
 # --- TERRAFORM INITIALIZATION ---
 terraform init \
-  -backend-config="bucket=$(jq -r ".[$ACCOUNT_ID].tf_state_bucket_name" "$JSON_FILE")" \
-  -backend-config="namespace=$(jq -r ".[$ACCOUNT_ID].namespace" "$JSON_FILE")" \
-  -backend-config="region=$(jq -r ".[$ACCOUNT_ID].region" "$JSON_FILE")" \
-  -backend-config="tenancy_ocid=$(jq -r ".[$ACCOUNT_ID].tenancy_ocid" "$JSON_FILE")" \
-  -backend-config="user_ocid=$(jq -r ".[$ACCOUNT_ID].user_ocid" "$JSON_FILE")" \
-  -backend-config="fingerprint=$(jq -r ".[$ACCOUNT_ID].fingerprint" "$JSON_FILE")" \
+  -backend-config="bucket=$(echo "$ACCOUNT_JSON" | jq -r '.tf_state_bucket_name')" \
+  -backend-config="namespace=$(echo "$ACCOUNT_JSON" | jq -r '.namespace')" \
+  -backend-config="region=$(echo "$ACCOUNT_JSON" | jq -r '.region')" \
+  -backend-config="tenancy_ocid=$(echo "$ACCOUNT_JSON" | jq -r '.tenancy_ocid')" \
+  -backend-config="user_ocid=$(echo "$ACCOUNT_JSON" | jq -r '.user_ocid')" \
+  -backend-config="fingerprint=$(echo "$ACCOUNT_JSON" | jq -r '.fingerprint')" \
   -backend-config="private_key_path=$(pwd)/private_key.pem" \
   -reconfigure
 
