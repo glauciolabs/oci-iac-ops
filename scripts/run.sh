@@ -23,16 +23,17 @@ if [[ ! -f "main.tf" ]]; then
     exit 1
 fi
 
-# --- VARIABLE PREPARATION (THE FIX) ---
-# [CHANGED] We now build the variables file by selecting only the keys that
-# are declared in variables.tf. This avoids all "undeclared variable" warnings.
-# It also renames "ssh_public_key" from the JSON to "ssh_key" for Terraform.
+# --- VARIABLE PREPARATION (THE FINAL FIX) ---
+# [CHANGED] The jq command now correctly transforms the 'block_volumes' list
+# from your JSON into the 'shared_volumes_config' map that Terraform expects.
+# This resolves the hidden data type conflict that was causing the null error.
 echo "📝 Generating terraform variables file..."
 jq --arg account_id "$ACCOUNT_ID" '
 .[$account_id] | {
+    # All other variables are passed directly
     compartment_ocid,
     image_ocid,
-    ssh_key: .ssh_public_key, # Renames the key to match Terraform
+    ssh_key: .ssh_public_key, # Renames key for Terraform
     region,
     prefix,
     tenancy_ocid,
@@ -46,7 +47,8 @@ jq --arg account_id "$ACCOUNT_ID" '
     ad_number,
     vcn_cidr,
     subnet_cidr,
-    shared_volumes_config: .block_volumes # Passes the volumes data
+    # This line transforms the list into a map using the display_name as the key
+    shared_volumes_config: ([.block_volumes[] | {key: .display_name | sub("-"; "_"), value: {display_name, size_in_gbs}}] | from_entries)
 }
 ' "$JSON_FILE" > account.auto.tfvars.json
 
@@ -57,7 +59,6 @@ chmod 600 private_key.pem
 echo "✅ Private key created"
 
 # --- TERRAFORM INITIALIZATION ---
-# This part remains the same, using jq to get individual values for the backend config.
 terraform init \
   -backend-config="bucket=$(jq -r ".[\"$ACCOUNT_ID\"].tf_state_bucket_name" "$JSON_FILE")" \
   -backend-config="namespace=$(jq -r ".[\"$ACCOUNT_ID\"].namespace" "$JSON_FILE")" \
@@ -71,8 +72,6 @@ terraform init \
 # --- TERRAFORM EXECUTION ---
 echo "📋 Executing terraform $ACTION..."
 
-# The TERRAFORM_ARGS array is no longer needed. The only variable we must pass
-# manually is private_key_path, as all others are in the auto.tfvars.json file.
 AUTO_APPROVE=""
 if [[ "$ACTION" == "apply" || "$ACTION" == "destroy" ]]; then
     AUTO_APPROVE="-auto-approve"

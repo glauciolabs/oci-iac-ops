@@ -29,7 +29,7 @@ module "oci_network" {
 module "oci_ampere_instance" {
   source                  = "../modules/oci-ampere-instance"
   compartment_id          = var.compartment_ocid
-  availability_domain = data.oci_identity_availability_domains.ads.availability_domains[tonumber(var.ad_number) - 1].name
+  availability_domain = data.oci_identity_availability_domains.ads.availability_domains[var.ad_number - 1].name
   subnet_id               = module.oci_network.subnet_id
   image_ocid              = var.image_ocid
   ssh_key                 = var.ssh_key
